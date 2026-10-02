@@ -1,0 +1,565 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+
+    <title>Weather App - Admin</title>
+
+    <!-- Leaflet CSS -->
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
+    <style>
+      body {
+        margin: 0;
+        padding: 30px;
+        font-family: Arial, sans-serif;
+        background: #f5f7fa;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+      }
+
+      #status {
+        margin-bottom: 20px;
+        color: green;
+        font-weight: bold;
+      }
+
+      #map {
+        width: 100%;
+        height: 500px;
+        margin-bottom: 30px;
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      button {
+        margin-bottom: 20px;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 5px;
+        background-color: #e53935;
+        color: white;
+        cursor: pointer;
+      }
+
+      button:hover {
+        background-color: #c62828;
+      }
+
+      .table-wrapper {
+        overflow-x: auto;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        background: white;
+      }
+
+      th,
+      td {
+        padding: 12px;
+        border: 1px solid #ddd;
+        text-align: left;
+        white-space: nowrap;
+      }
+
+      th {
+        background: #222;
+        color: white;
+      }
+
+      tr:hover {
+        background: #f1f1f1;
+      }
+    </style>
+  </head>
+
+  <body>
+    <h1>Weather App - Live Visitors</h1>
+
+    <div id="status">
+      Connecting...
+    </div>
+
+    <div id="map"></div>
+
+    <button id="clearButton">
+      Clear Visitors
+    </button>
+
+    <div class="table-wrapper">
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>City</th>
+            <th>Country</th>
+            <th>Latitude</th>
+            <th>Longitude</th>
+            <th>Temperature</th>
+            <th>Time</th>
+          </tr>
+        </thead>
+
+        <tbody id="visitorsTable"></tbody>
+      </table>
+    </div>
+
+    <!-- ========================= -->
+    <!-- LEAFLET JS -->
+    <!-- ========================= -->
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js">
+    </script>
+
+    <!-- ========================= -->
+    <!-- SOCKET.IO -->
+    <!-- ========================= -->
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <script>
+
+      console.log("Admin JS started");
+
+
+      // =====================================
+      // SOCKET
+      // =====================================
+
+      const socket = io();
+
+
+      // =====================================
+      // HTML ELEMENTS
+      // =====================================
+
+      const table =
+        document.getElementById("visitorsTable");
+
+      const status =
+        document.getElementById("status");
+
+      const clearButton =
+        document.getElementById("clearButton");
+
+
+      // =====================================
+      // MAP
+      // =====================================
+
+      const map =
+        L.map("map").setView(
+          [40.1872, 44.5152],
+          6
+        );
+
+
+      L.tileLayer(
+        "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+        {
+          attribution:
+            "&copy; OpenStreetMap contributors"
+        }
+      ).addTo(map);
+
+
+      // Store markers
+
+      const markers = {};
+
+
+      // =====================================
+      // ADD VISITOR
+      // =====================================
+
+      function addVisitor(visitor) {
+
+        console.log(
+          "Adding visitor:",
+          visitor
+        );
+
+
+        // ===============================
+        // TABLE
+        // ===============================
+
+        const row =
+          document.createElement("tr");
+
+
+        const time =
+          visitor.time
+            ? new Date(
+                visitor.time
+              ).toLocaleString()
+            : "-";
+
+
+        const temperature =
+          visitor.temperature !== null &&
+          visitor.temperature !== undefined
+            ? `${Math.round(
+                visitor.temperature
+              )} °C`
+            : "-";
+
+
+        row.innerHTML = `
+
+          <td>
+            ${visitor.id ?? "-"}
+          </td>
+
+          <td>
+            ${visitor.city ?? "-"}
+          </td>
+
+          <td>
+            ${visitor.country ?? "-"}
+          </td>
+
+          <td>
+            ${visitor.latitude ?? "-"}
+          </td>
+
+          <td>
+            ${visitor.longitude ?? "-"}
+          </td>
+
+          <td>
+            ${temperature}
+          </td>
+
+          <td>
+            ${time}
+          </td>
+
+        `;
+
+
+        table.appendChild(row);
+
+
+        // ===============================
+        // MAP MARKER
+        // ===============================
+
+        if (
+          typeof visitor.latitude === "number" &&
+          typeof visitor.longitude === "number"
+        ) {
+
+          const marker =
+            L.marker([
+              visitor.latitude,
+              visitor.longitude
+            ])
+            .addTo(map);
+
+
+          marker.bindPopup(`
+
+            <strong>
+              ${visitor.city ?? "Unknown"}
+            </strong>
+
+            <br>
+
+            Country:
+            ${visitor.country ?? "-"}
+
+            <br>
+
+            Temperature:
+            ${temperature}
+
+            <br>
+
+            Latitude:
+            ${visitor.latitude}
+
+            <br>
+
+            Longitude:
+            ${visitor.longitude}
+
+            <br>
+
+            Time:
+            ${time}
+
+          `);
+
+
+          markers[visitor.id] =
+            marker;
+        }
+
+      }
+
+
+      // =====================================
+      // INITIAL VISITORS
+      // =====================================
+
+      socket.on(
+        "visitors",
+        (visitors) => {
+
+          console.log(
+            "Initial visitors:",
+            visitors
+          );
+
+
+          // Clear table
+
+          table.innerHTML = "";
+
+
+          // Clear markers
+
+          Object.values(
+            markers
+          ).forEach(
+            (marker) => {
+
+              map.removeLayer(
+                marker
+              );
+
+            }
+          );
+
+
+          Object.keys(
+            markers
+          ).forEach(
+            (key) => {
+
+              delete markers[key];
+
+            }
+          );
+
+
+          // Check data
+
+          if (
+            !Array.isArray(
+              visitors
+            )
+          ) {
+
+            console.error(
+              "Visitors is not an array:",
+              visitors
+            );
+
+            return;
+
+          }
+
+
+          // Add visitors
+
+          visitors.forEach(
+            (visitor) => {
+
+              addVisitor(
+                visitor
+              );
+
+            }
+          );
+
+
+          status.innerText =
+            `Live • ${visitors.length} visitors`;
+
+        }
+      );
+
+
+      // =====================================
+      // NEW VISITOR
+      // =====================================
+
+      socket.on(
+        "newVisitor",
+        (visitor) => {
+
+          console.log(
+            "NEW VISITOR:",
+            visitor
+          );
+
+
+          addVisitor(
+            visitor
+          );
+
+
+          status.innerText =
+            `Live • ${table.children.length} visitors`;
+
+        }
+      );
+
+
+      // =====================================
+      // SOCKET CONNECTED
+      // =====================================
+
+      socket.on(
+        "connect",
+        () => {
+
+          console.log(
+            "Socket connected:",
+            socket.id
+          );
+
+
+          status.innerText =
+            "Live connection established";
+
+        }
+      );
+
+
+      // =====================================
+      // SOCKET ERROR
+      // =====================================
+
+      socket.on(
+        "connect_error",
+        (error) => {
+
+          console.error(
+            "Socket connection error:",
+            error
+          );
+
+
+          status.innerText =
+            "Connection error";
+
+        }
+      );
+
+
+      // =====================================
+      // CLEAR VISITORS
+      // =====================================
+
+      socket.on(
+        "visitorsCleared",
+        () => {
+
+          table.innerHTML = "";
+
+
+          Object.values(
+            markers
+          ).forEach(
+            (marker) => {
+
+              map.removeLayer(
+                marker
+              );
+
+            }
+          );
+
+
+          Object.keys(
+            markers
+          ).forEach(
+            (key) => {
+
+              delete markers[key];
+
+            }
+          );
+
+
+          status.innerText =
+            "Live • 0 visitors";
+
+        }
+      );
+
+
+      // =====================================
+      // CLEAR BUTTON
+      // =====================================
+
+      clearButton.addEventListener(
+        "click",
+        async () => {
+
+          const confirmed =
+            confirm(
+              "Delete all visitors?"
+            );
+
+
+          if (!confirmed) {
+            return;
+          }
+
+
+          try {
+
+            const response =
+              await fetch(
+                "/api/visitors",
+                {
+                  method: "DELETE"
+                }
+              );
+
+
+            const result =
+              await response.json();
+
+
+            console.log(
+              "Clear result:",
+              result
+            );
+
+
+          } catch (error) {
+
+            console.error(
+              "Clear error:",
+              error
+            );
+
+          }
+
+        }
+      );
+
+    </script>
+
+  </body>
+</html>
+
